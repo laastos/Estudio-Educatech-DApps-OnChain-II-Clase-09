@@ -4,40 +4,85 @@ import Head from 'next/head';
 import styles from '../styles/Home.module.css';
 import { useEffect } from 'react';
 import { toast } from 'react-toastify';
+import { useAccount, useSignMessage } from "wagmi";
 
 const Home: NextPage = () => {
+  const account = useAccount();
+  const { signMessage } = useSignMessage();
 
   useEffect(() => {
-    readRequest();
-  }, [])
-  const readRequest = async () => {
+    console.log('account is connected', account.isConnected);
+    if (account.isConnected) {
+      onConnectWallet();
+    }
+  }, [account.isConnected])
+
+  const onConnectWallet = async () => {
     try {
-      const response = await fetch('/api/login');
+      const token = localStorage.getItem('token');
+      if (!token) {
+        requestNonce();
+      } else {
+        toast.success('You are already authorized');
+      }
+    } catch (error) {
+      console.log('error on connect wallet', error);
+    }
+  }
+
+  const requestNonce = async () => {
+    try {
+      const response = await fetch('/api/login?request=nonce');
       const data = await response.json();
       console.log(data);
-      toast.success('Get request success');
+      setTimeout(() => {
+        handleSignatureSend(data.nonce)
+      }, 500);
+    } catch (error) {
+      console.log('error on api request nonce', error);
+    }
+  }
+
+  const handleSignatureSend = async (nonce: string) => {
+    try {
+      signMessage(
+        {
+          message: nonce
+        },
+        {
+          // On success, signMessage return data signed and nonce
+          onSuccess(data) {
+            onSendSignature(data, nonce);
+          },
+          onError(error, variables, context) {
+            console.log('error on sign message', error);
+          }
+        }
+      );
     } catch (error) {
       console.log('error on api request', error);
     }
   }
-  
-  const handleSignatureSend = async () => {
+
+  const onSendSignature = async (signature: string, nonce: string) => {
     try {
-      const data = {
-        message: 'This is a POST request',
-      }
-      const response2 = await fetch('/api/login', {
+      const response = await fetch('/api/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
-      })
-      const json = await response2.json()
-      console.log('post info ' , json);
-      toast.success('Post request success');
+        body: JSON.stringify({
+          method: 'signature',
+          address: account.address,
+          nonce,
+          signature
+        }),
+      });
+      const data = await response.json();
+      localStorage.setItem('token', data.token);
+      toast.success('You are authorized');
     } catch (error) {
-      console.log('error on api request', error);
+      console.log('error on api request token', error);
     }
   }
   return (
